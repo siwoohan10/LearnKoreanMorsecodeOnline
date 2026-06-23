@@ -96,7 +96,7 @@
         const freq = parseInt(document.getElementById('freqInput').value);
         
         // 1. 신규 글자 프리뷰
-        const newChars = level == 1 ? ['ㅏ', 'ㅓ'] : [kochSequence[level - 1]];
+        const newChars = level == 1 ? ['ㅏ', 'ㅓ'] : [kochSequence[parseInt(level)]];
         alert(`이번 레벨 신규 글자: ${newChars.join(', ')}`);
         playSequence(newChars.join(" "), wpm, wpm, freq, 0.5);
 
