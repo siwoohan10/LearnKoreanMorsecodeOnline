@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>LKMO - 한글 모스부호 학습기</title>
+    <title>KoLCWO - 한글 모스부호 학습기</title>
     <style>
         body { font-family: 'Courier New', Courier, monospace; background-color: #ffffff; color: #000; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 600px; border: 2px solid #000; padding: 20px; }
@@ -11,12 +11,16 @@
         label { font-weight: bold; }
         textarea { width: 100%; height: 100px; margin-top: 10px; box-sizing: border-box; }
         button { cursor: pointer; padding: 10px; width: 100%; font-weight: bold; }
+        .settings-panel div { display: flex; align-items: center; margin-bottom: 8px; }
+        .settings-panel label { width: 140px; }
+        .settings-panel input { flex-grow: 1; margin: 0 15px; }
+        .settings-panel span { width: 40px; text-align: right; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>LKMO</h1>
+    <h1>KoLCWO</h1>
     <div class="controls">
         <div class="control-group">
             <label>레슨 (Koch Level)</label>
@@ -39,6 +43,7 @@
         <div><label>Speed (WPM)</label><input type="range" id="charWpmInput" value="25" min="10" max="50"> <span id="charWpmLabel">25</span></div>
         <div><label>Eff. Speed (WPM)</label><input type="range" id="effWpmInput" value="15" min="5" max="50"> <span id="effWpmLabel">15</span></div>
         <div><label>Freq (Hz)</label><input type="range" id="freqInput" value="650" min="400" max="1000"> <span id="freqLabel">650</span></div>
+        <div><label>Volume (%)</label><input type="range" id="volInput" value="100" min="0" max="100"> <span id="volLabel">100</span></div>
     </div>
 
     <button id="startBtn">연습 시작</button>
@@ -49,8 +54,8 @@
         <span id="statusText">대기 중...</span> | <span id="scoreText">정답률: -%</span>
     </div>
 
-    <table id="statsTable" style="width: 100%; margin-top: 20px;">
-        <thead><tr><th>레슨</th><th>속도</th><th>정답률</th><th>날짜</th></tr></thead>
+    <table id="statsTable" style="width: 100%; margin-top: 20px; text-align: center; border-collapse: collapse;">
+        <thead><tr style="border-bottom: 2px solid #000;"><th>레슨</th><th>속도</th><th>정답률</th><th>날짜</th></tr></thead>
         <tbody id="statsBody"></tbody>
     </table>
 </div>
@@ -59,33 +64,72 @@
     const MORSE_KOR = {'ㄱ':'.-..','ㄴ':'..-.','ㄷ':'-...','ㄹ':'---','ㅁ':'--','ㅂ':'.--','ㅅ':'--.','ㅇ':'-.-','ㅈ':'.--.','ㅊ':'-.-.','ㅋ':'-..-','ㅌ':'--..','ㅍ':'---.','ㅎ':'.---','ㅏ':'.','ㅑ':'..','ㅓ':'-','ㅕ':'...','ㅗ':'.-','ㅛ':'-.','ㅜ':'----','ㅠ':'.-.','ㅡ':'-..','ㅣ':'..-','ㅐ':'--.-','ㅔ':'-.--'};
     const kochSequence = ['ㅏ','ㅓ','ㄱ','ㄴ','ㅗ','ㅜ','ㄷ','ㄹ','ㅣ','ㅡ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ','ㅑ','ㅕ','ㅛ','ㅠ','ㅐ','ㅔ'];
     
-    // UI 업데이트 및 오디오 설정 생략 (동작 확인을 위한 핵심 로직만 기술)
+    // 버그 수정 2: 슬라이더 수치 실시간 업데이트 로직
+    const updateLabel = (id) => {
+        document.getElementById(id + 'Label').innerText = document.getElementById(id + 'Input').value;
+    };
+    ['charWpm', 'effWpm', 'freq', 'vol'].forEach(id => {
+        document.getElementById(id + 'Input').addEventListener('input', (e) => {
+            updateLabel(id);
+            // 유효 속도가 문자 속도를 넘지 못하도록 제한
+            if(id === 'charWpm' && parseInt(document.getElementById('effWpmInput').value) > parseInt(e.target.value)) {
+                document.getElementById('effWpmInput').value = e.target.value;
+                updateLabel('effWpm');
+            }
+        });
+    });
+
     let audioCtx;
+    
+    // 버그 수정 3: 수학적으로 엄격하게 분리된 파른스워스 타이밍 로직
     function playSequence(text, charWpm, effWpm, freq, vol) {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const charDot = 1.2 / charWpm, spaceDot = 1.2 / effWpm, edge = 0.005;
+        const charDot = 1.2 / charWpm;      // 부호 자체의 속도
+        const spaceDot = 1.2 / effWpm;      // 띄어쓰기의 속도 (파른스워스)
+        const edge = 0.005;                 // 파핑 노이즈 방지 곡선
+        
         let time = audioCtx.currentTime + 0.1;
+        
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.type = 'sine'; osc.frequency.value = freq;
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; 
+        osc.frequency.value = freq;
+        osc.connect(gain); 
+        gain.connect(audioCtx.destination);
         gain.gain.setValueAtTime(0, audioCtx.currentTime);
 
         for (let char of text) {
-            if (char === ' ') { time += spaceDot * 4; continue; }
+            if (char === ' ') { 
+                // 단어 간 간격: 앞서 글자 끝에서 3이 더해졌으므로 4만 더해 총 7 유지
+                time += spaceDot * 4; 
+                continue; 
+            }
+            
             const morse = MORSE_KOR[char];
             if (!morse) continue;
-            for (let s of morse) {
+            
+            for (let k = 0; k < morse.length; k++) {
+                const s = morse[k];
                 const dur = (s === '.') ? charDot : charDot * 3;
+                
+                // 소리 ON (볼륨 적용)
                 gain.gain.setValueAtTime(0, time);
                 gain.gain.linearRampToValueAtTime(vol, time + edge);
                 gain.gain.setValueAtTime(vol, time + dur - edge);
                 gain.gain.linearRampToValueAtTime(0, time + dur);
-                time += dur + charDot;
+                
+                time += dur;
+                
+                // 글자 '내부'의 부호 간 간격 (1단점, 문자 속도 기준)
+                if (k < morse.length - 1) {
+                    time += charDot;
+                }
             }
-            time += (spaceDot * 3) - charDot;
+            // 글자와 글자 '사이'의 간격 (3단점, 유효 속도 기준)
+            time += spaceDot * 3;
         }
-        osc.start(); osc.stop(time);
+        osc.start(audioCtx.currentTime); 
+        osc.stop(time);
         return (time - audioCtx.currentTime) * 1000;
     }
 
@@ -94,31 +138,50 @@
         const wpm = parseInt(document.getElementById('charWpmInput').value);
         const eff = parseInt(document.getElementById('effWpmInput').value);
         const freq = parseInt(document.getElementById('freqInput').value);
+        const vol = parseInt(document.getElementById('volInput').value) / 100; // 볼륨 값 가져오기
+        
+        const btn = document.getElementById('startBtn');
+        const status = document.getElementById('statusText');
+        const userInput = document.getElementById('userInput');
+        
+        btn.disabled = true;
+        userInput.disabled = true;
+        userInput.value = "";
         
         // 1. 신규 글자 프리뷰
         const newChars = level == 1 ? ['ㅏ', 'ㅓ'] : [kochSequence[level - 1]];
-        alert(`이번 레벨 신규 글자: ${newChars.join(', ')}`);
-        playSequence(newChars.join(" "), wpm, wpm, freq, 0.5);
+        status.innerText = `프리뷰 재생 중: ${newChars.join(', ')}`;
+        
+        const previewText = newChars.join(" ") + " " + newChars.join(" ");
+        const previewDuration = playSequence(previewText, wpm, wpm, freq, vol);
 
         // 2. 문제 생성 및 재생
         setTimeout(() => {
             const groups = eff * parseInt(document.getElementById('timeInput').value);
-            let problem = [];
             const allowedCount = parseInt(level) + 1; 
-
-        for(let i = 0; i < groups; i++) {
-            let g = ""; 
-            for(let j = 0; j < 5; j++) {
-                // 0부터 allowedCount-1까지의 정수 인덱스를 무작위로 뽑습니다.
-                const randomIndex = Math.floor(Math.random() * allowedCount);
-                g += kochSequence[randomIndex];
+            
+            let problem = [];
+            for(let i=0; i<groups; i++) {
+                let g=""; 
+                for(let j=0; j<5; j++) {
+                    g += kochSequence[Math.floor(Math.random() * allowedCount)];
+                }
+                problem.push(g);
             }
-            problem.push(g);
-        }
             window.currentProblem = problem.join(" ");
-            const duration = playSequence(window.currentProblem, wpm, eff, freq, 0.5);
-            document.getElementById('userInput').disabled = false;
-        }, 2000);
+            
+            status.innerText = "연습 문제 재생 중...";
+            const duration = playSequence(window.currentProblem, wpm, eff, freq, vol);
+            
+            setTimeout(() => {
+                status.innerText = "수신 완료. 채점 버튼을 누르세요.";
+                btn.disabled = false;
+                userInput.disabled = false;
+                document.getElementById('checkBtn').disabled = false;
+                userInput.focus();
+            }, duration);
+            
+        }, previewDuration + 1000);
     });
 
     document.getElementById('checkBtn').addEventListener('click', () => {
@@ -126,19 +189,24 @@
         const ans = window.currentProblem.replace(/\s/g, "");
         let correct = 0;
         for(let i=0; i<ans.length; i++) if(user[i] === ans[i]) correct++;
-        const acc = Math.floor((correct/ans.length)*100);
+        
+        const acc = ans.length > 0 ? Math.floor((correct/ans.length)*100) : 0;
         document.getElementById('scoreText').innerText = `정답률: ${acc}%`;
+        document.getElementById('statusText').innerText = "채점 완료";
         
         // localStorage에 저장
         let history = JSON.parse(localStorage.getItem('cwHistory') || '[]');
-        history.unshift({lesson: document.getElementById('lessonSelect').value, acc, date: new Date().toLocaleDateString()});
+        history.unshift({lesson: document.getElementById('lessonSelect').value, speed: document.getElementById('charWpmInput').value, acc, date: new Date().toLocaleString()});
         localStorage.setItem('cwHistory', JSON.stringify(history.slice(0,10)));
         renderTable();
+        
+        document.getElementById('userInput').disabled = true;
+        document.getElementById('checkBtn').disabled = true;
     });
 
     function renderTable() {
         const body = document.getElementById('statsBody');
-        body.innerHTML = JSON.parse(localStorage.getItem('cwHistory')||'[]').map(r => `<tr><td>L${r.lesson}</td><td>${r.acc}%</td><td>${r.date}</td></tr>`).join('');
+        body.innerHTML = JSON.parse(localStorage.getItem('cwHistory')||'[]').map(r => `<tr style="border-bottom: 1px solid #eee;"><td>L${r.lesson}</td><td>${r.speed} WPM</td><td><strong style="color:${r.acc >= 90 ? 'green' : 'red'};">${r.acc}%</strong></td><td style="font-size:12px; color:#666;">${r.date}</td></tr>`).join('');
     }
     renderTable();
 </script>
