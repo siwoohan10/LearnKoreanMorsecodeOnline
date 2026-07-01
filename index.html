@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>LKMO - 한글 모스부호 학습기</title>
+    <title>LKMO - 종합 한글 모스부호 학습기</title>
     <style>
         :root {
             color-scheme: light;
@@ -59,7 +59,7 @@
             background: var(--surface-2);
         }
 
-        .control-group { margin-bottom: 10px; }
+        .control-group { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         label { font-weight: bold; color: var(--text); }
         textarea {
             width: 100%;
@@ -69,21 +69,36 @@
             background: var(--surface);
             color: var(--text);
             border: 1px solid var(--border);
+            font-size: 16px;
+            padding: 8px;
         }
         button {
             cursor: pointer;
-            padding: 10px;
+            padding: 12px;
             width: 100%;
             font-weight: bold;
+            font-size: 16px;
             border: 1px solid var(--border);
             background: var(--surface-2);
             color: var(--text);
+            transition: 0.2s;
         }
-        button:hover { border-color: var(--accent); }
+        button:hover:not(:disabled) { border-color: var(--accent); }
+        button:disabled { background-color: var(--muted); color: var(--surface); cursor: not-allowed; }
         button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
         }
+        
+        .settings-panel div { display: flex; align-items: center; margin-bottom: 8px; }
+        .settings-panel label { width: 140px; }
+        .settings-panel input { flex-grow: 1; margin: 0 15px; }
+        .settings-panel span { width: 40px; text-align: right; }
+        
+        /* 모드 선택 라디오 버튼 스타일 */
+        .mode-selector { display: flex; gap: 15px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed var(--border); }
+        .mode-selector label { font-weight: normal; cursor: pointer; color: var(--text); }
+
         select, input[type="range"] {
             accent-color: var(--accent);
         }
@@ -109,9 +124,18 @@
 <body>
 
 <div class="container">
-    <h1>LKMO</h1>
+    <h1 style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px;">LKMO</h1>
+    
     <div class="controls">
-        <div class="control-group">
+        <!-- 새로운 기능: 훈련 모드 선택 -->
+        <div class="mode-selector">
+            <strong>훈련 모드:</strong>
+            <label><input type="radio" name="mode" value="koch" checked> 코흐 레슨</label>
+            <label><input type="radio" name="mode" value="word"> 단어 연습</label>
+            <label><input type="radio" name="mode" value="sentence"> 문장 연습</label>
+        </div>
+
+        <div class="control-group" id="lessonGroup">
             <label>레슨 (Koch Level)</label>
             <select id="lessonSelect">
                 <script>
@@ -123,8 +147,12 @@
             </select>
         </div>
         <div class="control-group">
-            <label>시간 (Time)</label>
-            <select id="timeInput"><option value="1">1분</option><option value="2">2분</option><option value="3">3분</option></select>
+            <label>훈련 분량 (시간/개수)</label>
+            <select id="timeInput">
+                <option value="1">1분 / 문장 1개</option>
+                <option value="2">2분 / 문장 2개</option>
+                <option value="3">3분 / 문장 3개</option>
+            </select>
         </div>
     </div>
 
@@ -132,26 +160,41 @@
         <div><label>Speed (WPM)</label><input type="range" id="charWpmInput" value="25" min="10" max="50"> <span id="charWpmLabel">25</span></div>
         <div><label>Eff. Speed (WPM)</label><input type="range" id="effWpmInput" value="15" min="5" max="50"> <span id="effWpmLabel">15</span></div>
         <div><label>Freq (Hz)</label><input type="range" id="freqInput" value="650" min="400" max="1000"> <span id="freqLabel">650</span></div>
+        <div><label>Volume (%)</label><input type="range" id="volInput" value="100" min="0" max="100"> <span id="volLabel">100</span></div>
     </div>
 
     <button id="startBtn">연습 시작</button>
-    <textarea id="userInput" placeholder="소리를 듣고 입력하세요..." disabled></textarea>
-    <button id="checkBtn" disabled>결과 확인</button>
+    <!-- 사용자가 한글 완성형으로 치든, 자모로 치든 모두 정답 처리되도록 설명 추가 -->
+    <textarea id="userInput" placeholder="소리를 듣고 입력하세요." disabled></textarea>
+    <button id="checkBtn" disabled style="margin-top: 10px;">결과 확인</button>
 
-    <div class="status-bar" style="margin-top:20px;">
-        <span id="statusText">대기 중...</span> | <span id="scoreText">정답률: -%</span>
+    <div class="status-bar" style="margin-top:20px; display: flex; justify-content: space-between; font-weight: bold;">
+        <span id="statusText">대기 중...</span> <span id="scoreText">정답률: -%</span>
     </div>
-
-    <table id="statsTable" style="width: 100%; margin-top: 20px;">
-        <thead><tr><th>레슨</th><th>속도</th><th>정답률</th><th>날짜</th></tr></thead>
-        <tbody id="statsBody"></tbody>
-    </table>
 </div>
 
 <script>
-    const MORSE_KOR = {'ㄱ':'.-..','ㄴ':'..-.','ㄷ':'-...','ㄹ':'---','ㅁ':'--','ㅂ':'.--','ㅅ':'--.','ㅇ':'-.-','ㅈ':'.--.','ㅊ':'-.-.','ㅋ':'-..-','ㅌ':'--..','ㅍ':'---.','ㅎ':'.---','ㅏ':'.','ㅑ':'..','ㅓ':'-','ㅕ':'...','ㅗ':'.-','ㅛ':'-.','ㅜ':'----','ㅠ':'.-.','ㅡ':'-..','ㅣ':'..-','ㅐ':'--.-','ㅔ':'-.--'};
-    const kochSequence = ['ㅏ','ㅓ','ㄱ','ㄴ','ㅗ','ㅜ','ㄷ','ㄹ','ㅣ','ㅡ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ','ㅑ','ㅕ','ㅛ','ㅠ','ㅐ','ㅔ'];
-
+    // 1. 기초 데이터 및 실전 DB
+    const MORSE_KOR = {
+        // 한글 기본 자모
+        'ㄱ':'.-..','ㄴ':'..-.','ㄷ':'-...','ㄹ':'---','ㅁ':'--','ㅂ':'.--','ㅅ':'--.','ㅇ':'-.-','ㅈ':'.--.','ㅊ':'-.-.','ㅋ':'-..-','ㅌ':'--..','ㅍ':'---.','ㅎ':'.---',
+        'ㅏ':'.','ㅑ':'..','ㅓ':'-','ㅕ':'...','ㅗ':'.-','ㅛ':'-.','ㅜ':'----','ㅠ':'.-.','ㅡ':'-..','ㅣ':'..-','ㅐ':'--.-','ㅔ':'-.--',
+        
+        // 숫자 (0~9)
+        '1': '.----', '2': '..---', '3': '...--', '4': '....-', '5': '.....',
+        '6': '-....', '7': '--...', '8': '---..', '9': '----.', '0': '-----',
+        
+        // 주요 통신 기호 (Punctuation & Prosigns)
+        '.': '.-.-.-',    // 마침표
+        ',': '--..--',    // 쉼표
+        '?': '..--..',    // 물음표 (질문, 재송신 요구)
+        '/': '-..-.',     // 슬래시 (포터블 등 식별자 분리)
+        '=': '-...-',     // 이중 대시 (BT, 문장 간 분리)
+        '-': '-....-',    // 하이픈
+        '+': '.-.-.',     // 더하기 (AR, 송신 종료)
+        '@': '.--.-.'     // 골뱅이 기호
+    };
+    
     function applySystemTheme() {
         const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -168,14 +211,100 @@
         }
     }
     
-    // UI 업데이트 및 오디오 설정 생략 (동작 확인을 위한 핵심 로직만 기술)
+    const kochSequence = ['ㅏ','ㅓ','ㄱ','ㄴ','ㅗ','ㅜ','ㄷ','ㄹ','ㅣ','ㅡ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ','ㅑ','ㅕ','ㅛ','ㅠ','ㅐ','ㅔ'];
+
+    let WORDS_DB = ["무선", "전파"]; // 파일 로딩 실패 시 작동할 기본값
+    let SENTENCES_DB = ["여기는 인천광역시"]; 
+
+    // 외부 txt 파일에서 데이터를 읽어오는 함수
+    async function loadExternalData() {
+        try {
+            // words.txt 불러오기
+            const wordResponse = await fetch('words.txt');
+            if (wordResponse.ok) {
+                const wordText = await wordResponse.text();
+                // 엔터(\n) 기준으로 쪼개고, 양옆 공백을 없앤 뒤, 빈 줄을 걸러냅니다.
+                WORDS_DB = wordText.split('\n').map(w => w.trim()).filter(w => w.length > 0);
+            }
+
+            // sentences.txt 불러오기
+            const sentResponse = await fetch('sentences.txt');
+            if (sentResponse.ok) {
+                const sentText = await sentResponse.text();
+                SENTENCES_DB = sentText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            }
+            
+            console.log("외부 텍스트 파일 DB 로드 완료!");
+            console.log("단어 개수:", WORDS_DB.length, "문장 개수:", SENTENCES_DB.length);
+            
+            // 로드가 완료되면 버튼을 활성화하여 안전하게 시작하도록 처리
+            document.getElementById('startBtn').innerText = "연습 시작";
+            document.getElementById('startBtn').disabled = false;
+        } catch (error) {
+            console.error("파일 로드 중 오류 발생:", error);
+            document.getElementById('statusText').innerText = "DB 로드 실패 (기본값 사용)";
+            document.getElementById('startBtn').innerText = "연습 시작";
+            document.getElementById('startBtn').disabled = false;
+        }
+    }
+
+    // 페이지가 켜질 때 버튼을 잠시 끄고 데이터를 불러옵니다.
+    document.getElementById('startBtn').innerText = "DB 불러오는 중...";
+    document.getElementById('startBtn').disabled = true;
+    loadExternalData();
+
+    // 2. 한글 자모 분리기 (강력한 유니코드 수학 엔진)
+    const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+    const JUNG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
+    const JONG = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+    
+    // 모스부호 규정에 따른 겹자음/복모음 분해 매핑
+    const COMP_MAP = {'ㄲ':'ㄱㄱ','ㄸ':'ㄷㄷ','ㅃ':'ㅂㅂ','ㅆ':'ㅅㅅ','ㅉ':'ㅈㅈ','ㅒ':'ㅑㅣ','ㅖ':'ㅕㅣ','ㅘ':'ㅗㅏ','ㅙ':'ㅗㅐ','ㅚ':'ㅗㅣ','ㅝ':'ㅜㅓ','ㅞ':'ㅜㅔ','ㅟ':'ㅜㅣ','ㅢ':'ㅡㅣ', 'ㄳ':'ㄱㅅ', 'ㄵ':'ㄴㅈ', 'ㄶ':'ㄴㅎ', 'ㄺ':'ㄹㄱ', 'ㄻ':'ㄹㅁ', 'ㄼ':'ㄹㅂ', 'ㄽ':'ㄹㅅ', 'ㄾ':'ㄹㅌ', 'ㄿ':'ㄹㅍ', 'ㅀ':'ㄹㅎ', 'ㅄ':'ㅂㅅ'};
+
+    function splitKorean(text) {
+        let result = "";
+        for(let i=0; i<text.length; i++) {
+            const code = text.charCodeAt(i);
+            // 한글 가~힣 영역일 경우
+            if(code >= 0xAC00 && code <= 0xD7A3) {
+                const idx = code - 0xAC00;
+                let c = CHO[Math.floor(idx / 588)];
+                let u = JUNG[Math.floor((idx % 588) / 28)];
+                let j = JONG[idx % 28];
+                
+                result += (COMP_MAP[c]||c) + (COMP_MAP[u]||u) + (COMP_MAP[j]||j);
+            } else {
+                result += text[i]; // 공백이나 기호는 그대로 유지
+            }
+        }
+        return result;
+    }
+
+    // 3. UI 컨트롤 로직
+    const updateLabel = (id) => { document.getElementById(id + 'Label').innerText = document.getElementById(id + 'Input').value; };
+    ['charWpm', 'effWpm', 'freq', 'vol'].forEach(id => {
+        document.getElementById(id + 'Input').addEventListener('input', (e) => {
+            updateLabel(id);
+            if(id === 'charWpm' && parseInt(document.getElementById('effWpmInput').value) > parseInt(e.target.value)) {
+                document.getElementById('effWpmInput').value = e.target.value; updateLabel('effWpm');
+            }
+        });
+    });
+
+    // 모드 변경 시 레슨 선택기 숨김/표시 처리
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            document.getElementById('lessonGroup').style.display = (e.target.value === 'koch') ? 'flex' : 'none';
+        });
+    });
+
+    // 4. 오디오 엔진 (기존의 완벽한 파른스워스 엔진 유지)
     let audioCtx;
     function playSequence(text, charWpm, effWpm, freq, vol) {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const charDot = 1.2 / charWpm, spaceDot = 1.2 / effWpm, edge = 0.005;
         let time = audioCtx.currentTime + 0.1;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.type = 'sine'; osc.frequency.value = freq;
         osc.connect(gain); gain.connect(audioCtx.destination);
         gain.gain.setValueAtTime(0, audioCtx.currentTime);
@@ -184,72 +313,121 @@
             if (char === ' ') { time += spaceDot * 4; continue; }
             const morse = MORSE_KOR[char];
             if (!morse) continue;
-            for (let s of morse) {
-                const dur = (s === '.') ? charDot : charDot * 3;
+            
+            for (let k = 0; k < morse.length; k++) {
+                const dur = (morse[k] === '.') ? charDot : charDot * 3;
                 gain.gain.setValueAtTime(0, time);
                 gain.gain.linearRampToValueAtTime(vol, time + edge);
                 gain.gain.setValueAtTime(vol, time + dur - edge);
                 gain.gain.linearRampToValueAtTime(0, time + dur);
-                time += dur + charDot;
+                time += dur;
+                if (k < morse.length - 1) time += charDot;
             }
-            time += (spaceDot * 3) - charDot;
+            time += spaceDot * 3;
         }
-        osc.start(); osc.stop(time);
+        osc.start(audioCtx.currentTime); osc.stop(time);
         return (time - audioCtx.currentTime) * 1000;
     }
 
-    document.getElementById('startBtn').addEventListener('click', async () => {
-        const level = document.getElementById('lessonSelect').value;
+    // 5. 연습 시작
+    document.getElementById('startBtn').addEventListener('click', () => {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
         const wpm = parseInt(document.getElementById('charWpmInput').value);
         const eff = parseInt(document.getElementById('effWpmInput').value);
         const freq = parseInt(document.getElementById('freqInput').value);
+        const vol = parseInt(document.getElementById('volInput').value) / 100;
+        const amount = parseInt(document.getElementById('timeInput').value);
         
-        // 1. 신규 글자 프리뷰
-        const newChars = level == 1 ? ['ㅏ', 'ㅓ'] : [kochSequence[level - 1]];
-        alert(`이번 레벨 신규 글자: ${newChars.join(', ')}`);
-        playSequence(newChars.join(" "), wpm, wpm, freq, 0.5);
+        const btn = document.getElementById('startBtn');
+        const status = document.getElementById('statusText');
+        const userInput = document.getElementById('userInput');
+        
+        btn.disabled = true; 
+        userInput.disabled = false; // 듣는 즉시 입력할 수 있도록 활성화합니다.
+        userInput.value = "";
 
-        // 2. 문제 생성 및 재생
-        setTimeout(() => {
-            const groups = eff * parseInt(document.getElementById('timeInput').value);
-            let problem = [];
+        userInput.focus();
+        
+        let problemRawText = "";
+
+        if (mode === 'koch') {
+            const level = document.getElementById('lessonSelect').value;
             const allowedCount = parseInt(level) + 1; 
-
-        for(let i = 0; i < groups; i++) {
-            let g = ""; 
-            for(let j = 0; j < 5; j++) {
-                // 0부터 allowedCount-1까지의 정수 인덱스를 무작위로 뽑습니다.
-                const randomIndex = Math.floor(Math.random() * allowedCount);
-                g += kochSequence[randomIndex];
+            const groups = eff * amount;
+            let probArr = [];
+            for(let i=0; i<groups; i++) {
+                let g=""; for(let j=0; j<5; j++) g += kochSequence[Math.floor(Math.random() * allowedCount)];
+                probArr.push(g);
             }
-            problem.push(g);
+            problemRawText = probArr.join(" ");
+            
+            // 프리뷰 재생 (코흐 모드에만 적용)
+            const newChars = level == 1 ? ['ㅏ', 'ㅓ'] : [kochSequence[level - 1]];
+            status.innerText = `[프리뷰] 신규 글자 재생: ${newChars.join(', ')}`;
+            const previewDur = playSequence(newChars.join(" ") + " " + newChars.join(" "), wpm, wpm, freq, vol);
+            
+            setTimeout(() => startPlayback(problemRawText), previewDur + 1000);
+        } else if (mode === 'word') {
+            let probArr = [];
+            for(let i=0; i<amount * 5; i++) { // 분량에 비례해 단어 개수 조절
+                probArr.push(WORDS_DB[Math.floor(Math.random() * WORDS_DB.length)]);
+            }
+            problemRawText = probArr.join(" ");
+            startPlayback(problemRawText);
+        } else if (mode === 'sentence') {
+            let probArr = [];
+            for(let i=0; i<amount; i++) { // 1분당 1문장씩 출제
+                probArr.push(SENTENCES_DB[Math.floor(Math.random() * SENTENCES_DB.length)]);
+            }
+            problemRawText = probArr.join(" ");
+            startPlayback(problemRawText);
         }
-            window.currentProblem = problem.join(" ");
-            const duration = playSequence(window.currentProblem, wpm, eff, freq, 0.5);
-            document.getElementById('userInput').disabled = false;
-        }, 2000);
+
+        function startPlayback(rawText) {
+            // 원본 텍스트를 글로벌 변수에 저장 (채점 시 보여주기 위함)
+            window.currentRawProblem = rawText;
+            // 컴퓨터가 칠 수 있도록 자모로 완전히 쪼갠 텍스트 생성
+            window.currentJamoProblem = splitKorean(rawText);
+            
+            console.log("출제 문제:", rawText);
+            console.log("자모 분해:", window.currentJamoProblem);
+
+            status.innerText = "연습 문제 재생 중...";
+            const duration = playSequence(window.currentJamoProblem, wpm, eff, freq, vol);
+            
+            setTimeout(() => {
+                status.innerText = "수신 완료. 답안을 제출하세요.";
+                btn.disabled = false; 
+                // userInput.disabled = false; <- 이미 활성화되어 있으므로 지워도 무방합니다.
+                document.getElementById('checkBtn').disabled = false;
+            }, duration);
+        }
     });
 
+    // 6. 지능형 채점 로직
     document.getElementById('checkBtn').addEventListener('click', () => {
-        const user = document.getElementById('userInput').value.replace(/\s/g, "");
-        const ans = window.currentProblem.replace(/\s/g, "");
-        let correct = 0;
-        for(let i=0; i<ans.length; i++) if(user[i] === ans[i]) correct++;
-        const acc = Math.floor((correct/ans.length)*100);
-        document.getElementById('scoreText').innerText = `정답률: ${acc}%`;
+        const userInputText = document.getElementById('userInput').value;
         
-        // localStorage에 저장
-        let history = JSON.parse(localStorage.getItem('cwHistory') || '[]');
-        history.unshift({lesson: document.getElementById('lessonSelect').value, acc, date: new Date().toLocaleDateString()});
-        localStorage.setItem('cwHistory', JSON.stringify(history.slice(0,10)));
-        renderTable();
+        // 핵심: 사용자가 완성형 한글("무선")을 쳤든 자모("ㅁㅜㅅㅓㄴ")를 쳤든 모두 분해하여 공백 제거 후 비교
+        const userJamo = splitKorean(userInputText).replace(/\s/g, "");
+        const ansJamo = window.currentJamoProblem.replace(/\s/g, "");
+        
+        let correct = 0;
+        for(let i=0; i<ansJamo.length; i++) {
+            if(userJamo[i] === ansJamo[i]) correct++;
+        }
+        
+        const acc = ansJamo.length > 0 ? Math.floor((correct/ansJamo.length)*100) : 0;
+        document.getElementById('scoreText').innerText = `정답률: ${acc}%`;
+        document.getElementById('statusText').innerText = "채점 완료";
+        
+        if(acc < 100) {
+            alert(`[오답 확인]\n정답: ${window.currentRawProblem}\n입력: ${userInputText}`);
+        }
+        
+        document.getElementById('userInput').disabled = true;
+        document.getElementById('checkBtn').disabled = true;
     });
-
-    function renderTable() {
-        const body = document.getElementById('statsBody');
-        body.innerHTML = JSON.parse(localStorage.getItem('cwHistory')||'[]').map(r => `<tr><td>L${r.lesson}</td><td>${r.acc}%</td><td>${r.date}</td></tr>`).join('');
-    }
-    renderTable();
 </script>
 
 </body>
